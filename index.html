@@ -90,16 +90,20 @@
 			"opacity": 0.8
 		};
 
+		
+		function getJOSMUrl() {
+			var bounds = map.getBounds();
+			var sw = bounds.getSouthWest();
+			var ne = bounds.getNorthEast();
+			return "http://127.0.0.1:8111/load_and_zoom?new_layer=false&left=" + sw.lng + "&right=" + ne.lng + "&top=" + ne.lat + "&bottom=" + sw.lat
+		}
 		// Open the selected feature in JOSM using a faux AJAX call
 		function openInJosm(osmid) {
-			if (map.getZoom() < 16){
+			if (map.getZoom() < 16 && osmid){
 				// just get the object and let the user download area in josm
 				var JOSMurl = "http://127.0.0.1:8111/load_object?new_layer=true&objects=w" + osmid
 			} else {
-				bounds = map.getBounds();
-				sw = bounds.getSouthWest();
-				ne = bounds.getNorthEast();
-				var JOSMurl = "http://127.0.0.1:8111/load_and_zoom?left=" + sw.lng + "&right=" + ne.lng + "&top=" + ne.lat + "&bottom=" + sw.lat
+				var JOSMurl = getJOSMUrl();
 			}
 			// Use the .ajax JQ method to load the JOSM link unobtrusively and alert when the JOSM plugin is not running.
 			$.ajax({
@@ -186,6 +190,9 @@
 			elem = document.getElementById('osmilink');
 			if (elem) {
 				elem.innerHTML = '<a href="http://tools.geofabrik.de/osmi/?view=redactionbot&lon=' + map.getCenter().lng + '&lat=' + map.getCenter().lat + '&zoom=' + map.getZoom() + '">See this extent in OSM Inspektor</a>';
+			}
+			if (z > 14) {
+				elem.innerHTML += ' / edit extent in <a href="#" onClick=openInJosm()>JOSM</a> or <a target=_blank href="http://www.openstreetmap.org/edit?editor=potlatch2&lat=' + map.getCenter().lat + ' &lon=' + map.getCenter().lng + '&zoom=' + map.getZoom() + '">Potlatch 2</a>'
 			}
 						
 			// fire AJAX geojson fetch requests
