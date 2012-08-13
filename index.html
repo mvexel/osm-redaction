@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Redaction Affected Ways map</title>
+	<meta charset="utf-8" />
+
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+	<link rel="stylesheet" href="http://cdn.leafletjs.com/leaflet-0.4/leaflet.css" />
+	<!--[if lte IE 8]>
+		<link rel="stylesheet" href="http://cdn.leafletjs.com/leaflet-0.4/leaflet.ie.css" />
+	<![endif]-->
+	<script src="jquery.js"></script>
+</head>
+<body onLoad='fetchGeoJSONLayers()'>
+	<div id="map" style="position:absolute; top:0px; left:0px; width: 100%; height: 100%"></div>
+	<div onClick='javascript:document.getElementById("txtbox").style.display="none"' id="txtbox" style="display:block; position:absolute; left:30%; right:30%; top:20px; background-color:rgba(255,255,255,0.7); padding:4px; font: 12pt arial, sans-serif; text-align:center"><big>Redaction Affected Ways map</big><br />This map highlights the ways that were last touched by the redaction bot.<br /><em>This map does not show ways that were deleted by the bot!</em><br /><small>zoom in to see more / click to make me go away</small>
+		<div id="zoominnotice" style="color:red;font-weight:bold"></div>
+	</div>
+	<div id="spinner" style="display:none; position:absolute; bottom: 10px; left:10px"><img src="spinner.gif" /></div>
+	<div id="osmilink" style="display:block; position:absolute; bottom:10px; left:35px; height: 20px; font: 9pt arial, sans-serif;"></div>
+	<script src="http://cdn.leafletjs.com/leaflet-0.4/leaflet.js"></script>
+	<script>
+
+		var map = L.map('map').setView([39.5, -98.35], 5);
+		var geojsonLayer = new L.GeoJSON();
+		var gjGroup = L.layerGroup([geojsonLayer]);
+		gjGroup.addTo(map);
+
+		var layerBasename = "schaaltreinen:redaction_";
+		var jsonLayers = [];
+		
+		var style_motorways = {
+			"color": "#0033ff",
+			"weight": 5,
+			"opacity": 0.65
+		};
+
+		var style_trunks = {
+			"color": "#339933",
+			"weight": 5,
+			"opacity": 0.8
+		};
+		
+		var style_primaries = {
+			"color": "#ff2200",
+			"weight": 3,
+			"opacity": 0.8
+		};
+		
+		var style_secondaries = {
+			"color": "#ff9933",
+			"weight": 3,
+			"opacity": 0.8
+		};
+
+		var style_rest = {
+			"color": "#333333",
+			"weight": 2,
+			"opacity": 0.8
+		};
+
+		
+		function openInJosm(osmid) {
+			if (map.getZoom() < 16){
+				// just get the object and let the user download area in josm
+				var JOSMurl = "http://127.0.0.1:8111/load_object?new_layer=true&objects=w" + osmid
+			} else {
+				bounds = map.getBounds();
+				sw = bounds.getSouthWest();
+				ne = bounds.getNorthEast();
+				var JOSMurl = "http://127.0.0.1:8111/load_and_zoom?left=" + sw.lng + "&right=" + ne.lng + "&top=" + ne.lat + "&bottom=" + sw.lat
+			}
+			// Use the .ajax JQ method to load the JOSM link unobtrusively and alert when the JOSM plugin is not running.
+			$.ajax({
+				url: JOSMurl,
+				complete: function(t) {
+					if (t.status!=200) alert("JOSM remote control did not respond (" + t.status + "). Do you have JOSM running?");
+				}
+			})
+		};
+		
+		function htmlize(p) {
+			//console.log(p);
+			var html = "<p><big><strong>Way " + p.id + "</strong></big><br />version: " + p.version + "<br />last change: " + p.tstamp + "</p>"
+			html += "<p><a target=_blank href='http://www.osm.org/browse/way/" + p.id + "'>details</a> ";
+			html += " / <a href='#' onClick=openInJosm(" + p.id + ")>JOSM</a> ";
+			html += " / <a target=_blank href='http://www.openstreetmap.org/edit?editor=potlatch2&way=" + p.id + "'>Potlatch 2</a>";
+			return html;
+		}
+		
+		function onEachFeature(feature, layer) {
+			//console.debug(feature);
+			if (feature.properties) {
+				layer.bindPopup(htmlize(feature.properties));
+				//console.debug('attached popup');
+			} else {
+				//console.debug('feature has no id');
+			};
+		}
+
+		
+		function fetchGeoJSONLayers() {
+			// update osmi link
+			elem = document.getElementById('osmilink');
+			//console.log(elem);
+			if (elem) {
+				elem.innerHTML = '<a href="http://tools.geofabrik.de/osmi/?view=redactionbot&lon=' + map.getCenter().lng + '&lat=' + map.getCenter().lat + '&zoom=' + map.getZoom() + '">See this extent in OSM Inspektor</a>';
+			}
+			//console.log('inner html set');
+			
+			// clear layer control
+			gjGroup.eachLayer(function (layer) {
+				lyrctl.removeLayer(layer);
+			});
+			
+			// clear JSON layer names array and refill based on zoom level.
+			jsonLayers.length = 0;
+			gjGroup.clearLayers();
+			z = map.getZoom();
+			if (z >= 6) {
+				$('#spinner').fadeIn();
+				$('#zoominnotice').text('');
+				jsonLayers.push("motorways");
+				jsonLayers.push("trunks");
+			} else {
+				$('#zoominnotice').text('please zoom in to see stuff');
+			};
+			if (z >= 8) {
+				jsonLayers.push("primaries");
+			};
+			if (z >= 9) {
+				jsonLayers.push("secondaries");
+			};
+			if (z >= 12) {
+				jsonLayers.push("rest");
+			};
+			
+			// fire AJAX geojson fetch requests
+			var b = map.getBounds();
+			var sw = b.getSouthWest();
+			var ne = b.getNorthEast();
+			for (l in jsonLayers) {
+				var geoJsonUrl = "http://lima.schaaltreinen.nl:8080/geoserver/schaaltreinen/ows?service=WFS&version=1.0.0&request=GetFeature&BBOX=" + sw.lng + "," + sw.lat + "," + ne.lng + "," + ne.lat + "&typeName=" + layerBasename + jsonLayers[l] + "&outputFormat=json&format_options=callback:loadGeoJson";
+				$.ajax({ 
+					url: geoJsonUrl, 
+					dataType: 'jsonp',
+					success: function(data) {
+						loadGeoJson(data, jsonLayers[l]);
+					}
+				});		
+			};
+		};
+
+		 function loadGeoJson(data) {
+			iter = 0;
+			lyrname = '';
+			while (lyrname == '') {
+				lyrname = data.features[iter].id.split("_")[1].split(".")[0];
+				iter++;
+			}
+			stylename = "style_" + lyrname;
+			var geojsonLayer = new L.GeoJSON(data, {onEachFeature:onEachFeature, style: eval(stylename)});
+			gjGroup.addLayer(geojsonLayer);
+			$('#spinner').fadeOut();
+			//console.log('adding overlay ' + lyrname);
+			lyrctl.addOverlay(geojsonLayer, lyrname);
+		};
+		
+		map.on('moveend', fetchGeoJSONLayers);
+
+		var mapquestUrl = 'http://{s}.mqcdn.com/tiles/1.0.0/osm/{z}/{x}/{y}.png',
+		subDomains = ['otile1','otile2','otile3','otile4'],
+		mapquestAttrib = 'Data, imagery and map information provided by <a href="http://open.mapquest.co.uk" target="_blank">MapQuest</a>, <a href="http://www.openstreetmap.org/" target="_blank">OpenStreetMap</a> and contributors.';
+		var mapquest = new L.TileLayer(mapquestUrl, {maxZoom: 18, attribution: mapquestAttrib, subdomains: subDomains, opacity: 0.5});
+		mapquest.addTo(map);
+		
+		//L.control.scale().addTo(map);
+		
+		var baseLayers = {"MapQuest": mapquest};
+		var overlays = {}
+		var lyrctl = L.control.layers(baseLayers, overlays);
+		//console.log('adding lyrctl to map');
+		lyrctl.addTo(map);
+	</script>
+</body>
+</html>
