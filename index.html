@@ -14,7 +14,7 @@
 </head>
 <body onLoad='arrangeLayers()'>
 	<div id="map" style="position:absolute; top:0px; left:0px; width: 100%; height: 100%"></div>
-	<div onClick='javascript:document.getElementById("txtbox").style.display="none"' id="txtbox" style="display:block; position:absolute; left:30%; right:30%; top:20px; background-color:rgba(255,255,255,0.7); padding:4px; font: 12pt arial, sans-serif; text-align:center"><big>Redaction Affected / Deleted Ways map</big><br />This map highlights the ways that were last touched by the redaction bot.<br /><em>This map does <del>not</del> show ways that were deleted by the bot!</em><br /><small><img src="legend_deletedways.png" /> deleted <img src="legend_motorways.png" /> touched motorways <img src="legend_trunks.png" /> touched trunks <br /><img src="legend_primaries.png" /> touched primaries <img src="legend_secondaries.png" /> touched secondaries <img src="legend_rest.png" /> touched other (z>12) <br />click to make me go away --- this on <a href="https://github.com/mvexel/osm-redaction">github</a> --- a thing by Martijn van Exel</small>
+	<div onClick='javascript:document.getElementById("txtbox").style.display="none"' id="txtbox" style="display:block; position:absolute; left:30%; right:30%; top:20px; background-color:rgba(255,255,255,0.7); padding:4px; font: 12pt arial, sans-serif; text-align:center"><big>Redaction Affected / Deleted Ways map</big><br />This map highlights the ways that were last touched by the redaction bot.<br /><em>This map does <del>not</del> show ways that were deleted by the bot!</em><br /><small><img src="legend_deletedways.png" /> deleted <img src="legend_motorways.png" /> touched motorways <img src="legend_trunks.png" /> touched trunks <br /><img src="legend_primaries.png" /> touched primaries <img src="legend_secondaries.png" /> touched secondaries <img src="legend_rest.png" /> touched other (z>12) <br />click to make me go away</small>
 		<div id="zoominnotice" style="color:red;font-weight:bold"></div>
 	</div>
 	<div id="spinner" style="display:none; position:absolute; bottom: 10px; left:10px"><img src="spinner.gif" /></div>
@@ -34,9 +34,10 @@
 		var init = true;
 		var rasterLayers = [];
 		var prettynames = ['Deleted ways','Touched motorways','Touched trunk ways','Touched primary ways','Touched secondary ways'];
-
+		var eventtype;
+		
 		// map event hooks
-		map.on('moveend', fetchGeoJSONLayers);
+		map.on('moveend', arrangeLayers);
 		map.on('zoomend', arrangeLayers);
 		
 		// Add MQ base layer to map
@@ -49,7 +50,6 @@
 		// add a layer control
 		var baseLayers = {"MapQuest": mapquest};
 		var lyrctl = L.control.layers(baseLayers, overlays);
-		//console.log('adding lyrctl to map');
 		lyrctl.addTo(map);
 
 		// define styles
@@ -112,7 +112,6 @@
 		
 		// prettify the output for the balloon
 		function htmlize(p) {
-			//console.log(p);
 			var html = "<p><big><strong>Way " + p.id + "</strong></big><br />version: " + p.version + "<br />last change: " + p.tstamp + "</p>"
 			html += "<p><a target=_blank href='http://www.osm.org/browse/way/" + p.id + "'>details</a> ";
 			html += " / <a href='#' onClick=openInJosm(" + p.id + ")>JOSM</a> ";
@@ -122,35 +121,44 @@
 		
 		// create balloon popup for each feature.
 		function onEachFeature(feature, layer) {
-			//console.debug(feature);
 			if (feature.properties) {
 				layer.bindPopup(htmlize(feature.properties));
-				//console.debug('attached popup');
-			} else {
-				//console.debug('feature has no id');
 			};
 		}
 
 		// (re)arrange the layers based on zoom level: load JSON layers for z>=12, raster overviews for lower zooms.
-		function arrangeLayers() {
+		function arrangeLayers(event) {
+//			console.debug('arrangeLayers');
+
+			if (event && event.type == 'moveend' && prevzoom != z) {
+				// zoom event has already fired
+				prevzoom = z;
+				return;
+			}
+
+			var z = map.getZoom();
+
 			// clear overlays from layer control
 			gjGroup.eachLayer(function (layer) {
 				lyrctl.removeLayer(layer);
+				map.removeLayer(layer);
 			});
 			
 			// clear JSON layer names array and refill based on zoom level.
 			jsonLayers.length = 0;
 			gjGroup.clearLayers();
 			
-			var z = map.getZoom();
+						
 			if (z >= 12) {
 				if (prevzoom < 12) {
 					RemoveLowresLayer();
-				}
+				};
+				
 				jsonLayers.push("primaries");
 				jsonLayers.push("secondaries");
 				jsonLayers.push("rest");
 				jsonLayers.push("deletedways");
+				
 				$('#spinner').fadeIn();
 				$('#zoominnotice').text('');
 			} else {
@@ -161,20 +169,24 @@
 				}
 				$('#zoominnotice').text('zoom in to get clickable ways');
 			};
+
 			prevzoom = z;
+			
 			fetchGeoJSONLayers();
 		};
-		
+				
 		function fetchGeoJSONLayers() {
+//			console.debug('fetchGeoJSONLayers');
 			var z = map.getZoom();
-			if (z < 12) return;
+			if (z < 12) {
+//				console.debug('nothing to do, z < 12');
+				return;
+			}
 			// update osmi link
 			elem = document.getElementById('osmilink');
-			//console.log(elem);
 			if (elem) {
 				elem.innerHTML = '<a href="http://tools.geofabrik.de/osmi/?view=redactionbot&lon=' + map.getCenter().lng + '&lat=' + map.getCenter().lat + '&zoom=' + map.getZoom() + '">See this extent in OSM Inspektor</a>';
 			}
-			//console.log('inner html set');
 						
 			// fire AJAX geojson fetch requests
 			var b = map.getBounds();
@@ -197,16 +209,15 @@
 			lyrname = '';
 			while (lyrname == '') {
 				if (data.features.length==0) {
-					continue;
+					break;
 				}
 				lyrname = data.features[iter].id.split("_")[1].split(".")[0];
 				iter++;
-			}
+			};
 			stylename = "style_" + lyrname;
 			var geojsonLayer = new L.GeoJSON(data, {onEachFeature:onEachFeature, style: eval(stylename)});
 			gjGroup.addLayer(geojsonLayer);
 			$('#spinner').fadeOut();
-			//console.log('adding overlay ' + lyrname);
 			lyrctl.addOverlay(geojsonLayer, lyrname);
 		};
 		
