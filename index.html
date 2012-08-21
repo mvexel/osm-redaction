@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-	<title>Redaction Affected / Deleted Ways map</title>
+	<title>OpenStreetMap Redacted Highways Map</title>
 	<meta charset="utf-8" />
 
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -14,7 +14,7 @@
 </head>
 <body onLoad='arrangeLayers()'>
 	<div id="map" style="position:absolute; top:0px; left:0px; width: 100%; height: 100%"></div>
-	<div id="txtbox" style="display:block; position:absolute; left:30%; right:30%; top:20px; background-color:rgba(255,255,255,0.7); overflow:hidden; padding:4px; font: 12pt arial, sans-serif; text-align:center"><big>Redaction Affected / Deleted Ways map</big><br />This map highlights the ways that were last touched by the redaction bot.<br /><em>This map does <del>not</del> show ways that were deleted by the bot!</em><br /><small><img src="legend_deletedways.png" /> deleted <img src="legend_motorways.png" /> touched motorways <img src="legend_trunks.png" /> touched trunks <br /><img src="legend_primaries.png" /> touched primaries <img src="legend_secondaries.png" /> touched secondaries <img src="legend_rest.png" /> touched other (z>12) <div style='font-size:8pt'>click to collapse this box. <a href="https://github.com/mvexel/osm-redaction">This on github</a>. A thing by <a href="http://oegeo.wordpress.com/">Martijn van Exel</a></div></small>
+	<div id="txtbox" style="display:block; position:absolute; left:30%; right:30%; top:20px; background-color:rgba(255,255,255,0.7); overflow:hidden; padding:4px; font: 12pt arial, sans-serif; text-align:center"><big>OpenStreetMap Redacted Highways map</big><br />This map highlights the ways that were last touched by the redaction bot.<br /><em>This map does <del>not</del> show highways that were deleted by the bot!</em><br /><small><img src="legend_deletedways.png" /> deleted highways <img src="legend_motorways.png" /> touched motorways <img src="legend_trunks.png" /> touched trunks <br /><img src="legend_primaries.png" /> touched primaries <img src="legend_secondaries.png" /> touched secondaries <img src="legend_rest.png" /> touched other (z>12) <div style='font-size:8pt'>click to collapse this box. <a href="https://github.com/mvexel/osm-redaction">This on github</a>. A thing by <a href="http://oegeo.wordpress.com/">Martijn van Exel</a></div></small>
 		<div id="zoominnotice" style="color:red;font-weight:bold"></div>
 	</div>
 	<div id="spinner" style="display:none; position:absolute; bottom: 10px; left:10px"><img src="spinner.gif" /></div>
@@ -33,7 +33,7 @@
 		var overlays = {};
 		var init = true;
 		var rasterLayers = [];
-		var prettynames = ['Deleted ways','Touched motorways','Touched trunk ways','Touched primary ways','Touched secondary ways'];
+		var prettynames = ['Deleted highways','Touched motorways','Touched trunk ways','Touched primary ways','Touched secondary ways'];
 		var eventtype;
 		
 		// map event hooks
@@ -71,7 +71,7 @@
 			"opacity": 0.8
 		};
 
-		var style_deletedways = {
+    var style_deletedhighways = {
 			"color": "#993399",
 			"weight": 3,
 			"opacity": 0.8,
@@ -161,7 +161,7 @@
 				jsonLayers.push("primaries");
 				jsonLayers.push("secondaries");
 				jsonLayers.push("rest");
-				jsonLayers.push("deletedways");
+				jsonLayers.push("deletedhighways");
 				
 				$('#spinner').fadeIn();
 				$('#zoominnotice').text('');
@@ -230,7 +230,7 @@
 		
 		function AddLowresLayers() {
 			// Add low res raster redaction layers to the map
-			var ll = ['allways','deletedways'];
+			var ll = ['allways','deletedhighways'];
 			var desc = ['touched','deleted'];
 			for (l in ll) {
 				var lname = 'schaaltreinen:redaction_' + ll[l];
