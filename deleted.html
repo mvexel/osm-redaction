@@ -14,7 +14,7 @@
 </head>
 <body onLoad='arrangeLayers()'>
 	<div id="map" style="position:absolute; top:0px; left:0px; width: 100%; height: 100%"></div>
-	<div id="txtbox" style="display:block; position:absolute; left:30%; right:30%; top:20px; background-color:rgba(255,255,255,0.7); overflow:hidden; padding:4px; font: 12pt arial, sans-serif; text-align:center"><big>OpenStreetMap Redacted / <a href="/redaction/deleted.html">Deleted</a> Highways map</big><br />This map highlights the ways that were last touched by the redaction bot.<br /><small><img src="legend_motorways.png" /> touched motorways <img src="legend_trunks.png" /> touched trunks <br /><img src="legend_primaries.png" /> touched primaries <img src="legend_secondaries.png" /> touched secondaries <img src="legend_rest.png" /> touched other (z>12) <div style='font-size:8pt'>click to collapse this box. <a href="https://github.com/mvexel/osm-redaction">This on github</a>. A thing by <a href="http://oegeo.wordpress.com/">Martijn van Exel</a></div></small>
+	<div id="txtbox" style="display:block; position:absolute; left:30%; right:30%; top:20px; background-color:rgba(255,255,255,0.7); overflow:hidden; padding:4px; font: 12pt arial, sans-serif; text-align:center"><big>OpenStreetMap <a href="/redaction/index.html">Redacted</a> / Deleted Highways map</big><br />This map shows highways deleted by the redaction bot.<br /><span style='color:red; font-weight:bold'>new:</span> now showing remapped and non-remapped ways<br /><small><img src="legend_trunks.png" /> Likely remapped ways <img src="legend_primaries.png" /> Not yet remapped ways <div style='font-size:8pt'>click to collapse this box. <a href="https://github.com/mvexel/osm-redaction">This on github</a>. A thing by <a href="http://oegeo.wordpress.com/">Martijn van Exel</a></div></small>
 		<div id="zoominnotice" style="color:red;font-weight:bold"></div>
 	</div>
 	<div id="spinner" style="display:none; position:absolute; bottom: 10px; left:10px"><img src="spinner.gif" /></div>
@@ -33,12 +33,13 @@
 		var overlays = {};
 		var init = true;
 		var rasterLayers = [];
-		var prettynames = ['Touched motorways','Touched trunk ways','Touched primary ways','Touched secondary ways'];
+		var prettynames = {'likelyremapped':'Likely remapped deleted ways','remappinginarea':'Non-remapped deleted ways; recent mapping very close','notremapped':'Non-remapped deleted ways'};
 		var eventtype;
 		
 		// map event hooks
 		map.on('moveend', arrangeLayers);
 		map.on('zoomend', arrangeLayers);
+//		map.on('viewreset', arrangeLayers);
 		
 		// Add MQ base layer to map
 		var mapquestUrl = 'http://{s}.mqcdn.com/tiles/1.0.0/osm/{z}/{x}/{y}.png',
@@ -49,47 +50,36 @@
 
 		// add a layer control
 		var baseLayers = {"MapQuest": mapquest};
-		var lyrctl = L.control.layers(baseLayers, overlays);
+		var lyrctl = L.control.layers(baseLayers, overlays, {"collapsed": false});
 		lyrctl.addTo(map);
 
 		// define styles
-		var style_motorways = {
-			"color": "#0033ff",
-			"weight": 5,
-			"opacity": 0.65
-		};
 
-		var style_trunks = {
+		var style_likelyremapped = {
 			"color": "#339933",
-			"weight": 5,
-			"opacity": 0.8,
+			"weight": 3,
+			"opacity": 1,
 		};
 		
-		var style_primaries = {
+		var style_notremapped = {
 			"color": "#ff2200",
 			"weight": 3,
-			"opacity": 0.8
+			"opacity": 1
 		};
 
-		var style_secondaries = {
-			"color": "#ff9933",
+		var style_remappinginarea = {
+			"color": "#ff2200",
 			"weight": 3,
-			"opacity": 0.8
+			"opacity": 0.6
 		};
-
-		var style_rest = {
-			"color": "#333333",
-			"weight": 2,
-			"opacity": 0.8
-		};
-
 		
 		function getJOSMUrl() {
 			var bounds = map.getBounds();
 			var sw = bounds.getSouthWest();
 			var ne = bounds.getNorthEast();
 			return "http://127.0.0.1:8111/load_and_zoom?new_layer=false&left=" + sw.lng + "&right=" + ne.lng + "&top=" + ne.lat + "&bottom=" + sw.lat
-		}
+		};
+		
 		// Open the selected feature in JOSM using a faux AJAX call
 		function openInJosm(osmid) {
 			if (map.getZoom() < 16 && osmid){
@@ -97,6 +87,7 @@
 				var JOSMurl = "http://127.0.0.1:8111/load_object?new_layer=true&objects=w" + osmid
 			} else {
 				var JOSMurl = getJOSMUrl();
+				if (osmid) { JOSMurl += '&select=w' + osmid };
 			}
 			// Use the .ajax JQ method to load the JOSM link unobtrusively and alert when the JOSM plugin is not running.
 			$.ajax({
@@ -108,83 +99,114 @@
 		};
 		
 		// prettify the output for the balloon
-		function htmlize(p) {
-			var html = "<p><big><strong>Way " + p.id + "</strong></big><br />version: " + p.version + "<br />last change: " + p.tstamp + "</p>"
-			html += "<p><a target=_blank href='http://www.osm.org/browse/way/" + p.id + "'>details</a> ";
-			html += " / <a href='#' onClick=openInJosm(" + p.id + ")>JOSM</a> ";
-			html += " / <a target=_blank href='http://www.openstreetmap.org/edit?editor=potlatch2&way=" + p.id + "'>Potlatch 2</a>";
+		function htmlize(f) {
+			//console.log(f);
+			var p = f.properties;
+			// calculate "center"
+			var c1 = f.geometry.coordinates[0];
+			var c2 = f.geometry.coordinates[f.geometry.coordinates.length - 1];
+			var clng = c1[0] + (c2[0] - c1[0]) / 2;
+			var clat = c1[1] + (c2[1] - c1[1]) / 2;
+			//console.log(clng + ',' + clat);
+			var html = "<p><big><strong>Deleted way " + p.id + "</strong></big><br />version: " + p.version + "<br />last change: " + p.tstamp + "</p>"
+			if (p.likelyremapped) {
+				//console.log(p.id + ' is likely remapped');
+				html += "This way has likely been remapped with way <a href='http://www.osm.org/browse/way/" + p.remappedwayid + "' target=_blank>" + p.remappedwayid + "</a>.";
+			} else if (p.remappinginarea) {
+				//console.log(p.if + ' is not remapped but recent mapping has been done in close vicinity');
+				var recentwaysinarea = [];
+				if (p.recentwaysinarea.length > 0) {
+					recentwaysinarea = p.recentwaysinarea.split(';');
+				}
+				if (recentwaysinarea.length > 0) {
+					html += "This way has not been remapped, but there has been mapping activity on highways since the redaction:<br />";
+					for (i in recentwaysinarea) {
+						html += "<a href='http://www.osm.org/browse/way/" + recentwaysinarea[i] + "' target=_blank>" + recentwaysinarea[i] + "</a> / ";
+					}
+					html = html.substr(0,html.length - 3) + '.';
+				}
+			} else {
+				//console.log(p.if + ' is not remapped ');
+				html += "This way has not been remapped yet, and no highway remapping activity has been detected in close vicinity<br />";
+			};
+			if (map.getZoom() > 14) {
+				html += "<p>Edit this area in <a href='#' onClick=openInJosm(" + p.remappedwayid + ")>JOSM</a> ";
+				html += " / <a target=_blank href='http://www.openstreetmap.org/edit?editor=potlatch2&lat=" + clat + "&lon=" + clng + "&zoom=17'>Potlatch 2</a></p>";
+			} else {
+				html += "<p><small><em>zoom in " + (15 - map.getZoom()) + " more levels to get direct editor links</em></small>";
+			};
 			return html;
-		}
+		};
 		
 		// create balloon popup for each feature.
 		function onEachFeature(feature, layer) {
 			if (feature.properties) {
-				layer.bindPopup(htmlize(feature.properties));
+				layer.bindPopup(htmlize(feature));
 			};
-		}
+		};
 
-		// (re)arrange the layers based on zoom level: load JSON layers for z>=12, raster overviews for lower zooms.
-		function arrangeLayers(event) {
-//			console.debug('arrangeLayers');
-
-			if (event && event.type == 'moveend' && prevzoom != z) {
-				// zoom event has already fired
-				prevzoom = z;
-				return;
-			}
-
-			var z = map.getZoom();
-
+		function clearGeoJSONLayers() {
 			// clear overlays from layer control
 			gjGroup.eachLayer(function (layer) {
 				lyrctl.removeLayer(layer);
 				map.removeLayer(layer);
 			});
-			
 			// clear JSON layer names array and refill based on zoom level.
 			jsonLayers.length = 0;
 			gjGroup.clearLayers();
-			
-						
-			if (z >= 12) {
-				if (prevzoom < 12) {
-					RemoveLowresLayer();
-				};
-				
-				jsonLayers.push("primaries");
-				jsonLayers.push("secondaries");
-				jsonLayers.push("rest");
-				
-				$('#spinner').fadeIn();
-				$('#zoominnotice').text('');
-			} else {
-				if (prevzoom >= 12 || init) {
-					jsonLayers.length = 0;
-					AddLowresLayers();
-					init = false;
-				}
-				$('#zoominnotice').text('zoom in to get clickable ways');
+			$('#zoominnotice').text('zoom in to get clickable ways');
+		};
+		
+		// (re)arrange the layers based on zoom level: load JSON layers for z>=12, raster overviews for lower zooms.
+		function arrangeLayers(event) {
+			if (init) {
+				AddLowresLayers();
+				init = false;
 			};
-
-			prevzoom = z;
 			
+			var z = map.getZoom();
+			// if zoomend event:
+			if (event && event.type == 'zoomend') {
+			// if zoomed beyond 12:
+				if (z > 12) {
+					// clear raster layers
+					RemoveLowresLayers();
+					// rest is handled by moveend event
+				} else {
+					// else (zoomed to 12 or lower): clear vector layers
+					clearGeoJSONLayers();
+					// push raster layers
+					AddLowresLayers();
+				}
+			}
+			
+			if (event && event.type == 'moveend') {
+			// if moveend event:
+				if (z > 12) {
+					clearGeoJSONLayers();
+					addGeoJSONLayers();
+				}
+			}
+		};
+			
+		function addGeoJSONLayers() {
+			jsonLayers.push("notremapped");
+			jsonLayers.push("remappinginarea");
+			jsonLayers.push("likelyremapped");
+			$('#zoominnotice').text('');			
 			fetchGeoJSONLayers();
 		};
 				
 		function fetchGeoJSONLayers() {
-//			console.debug('fetchGeoJSONLayers');
 			var z = map.getZoom();
-			if (z < 12) {
-//				console.debug('nothing to do, z < 12');
-				return;
-			}
+			$('#spinner').fadeIn();
 			// update osmi link
 			elem = document.getElementById('osmilink');
 			if (elem) {
 				elem.innerHTML = '<a href="http://tools.geofabrik.de/osmi/?view=redactionbot&lon=' + map.getCenter().lng + '&lat=' + map.getCenter().lat + '&zoom=' + map.getZoom() + '">See this extent in OSM Inspektor</a>';
 			}
 			if (z > 14) {
-				elem.innerHTML += ' / edit extent in <a href="#" onClick=openInJosm()>JOSM</a> or <a target=_blank href="http://www.openstreetmap.org/edit?editor=potlatch2&lat=' + map.getCenter().lat + ' &lon=' + map.getCenter().lng + '&zoom=' + map.getZoom() + '">Potlatch 2</a>'
+				elem.innerHTML += ' / edit extent in <a href="#" onClick=openInJosm()>JOSM</a> or <a target=_blank href="http://www.openstreetmap.org/edit?editor=potlatch2&lat=' + map.getCenter().lat + '&lon=' + map.getCenter().lng + '&zoom=' + map.getZoom() + '">Potlatch 2</a>'
 			}
 						
 			// fire AJAX geojson fetch requests
@@ -213,17 +235,19 @@
 				lyrname = data.features[iter].id.split("_")[1].split(".")[0];
 				iter++;
 			};
+			if (lyrname == "") return false;
 			stylename = "style_" + lyrname;
 			var geojsonLayer = new L.GeoJSON(data, {onEachFeature:onEachFeature, style: eval(stylename)});
 			gjGroup.addLayer(geojsonLayer);
 			$('#spinner').fadeOut();
-			lyrctl.addOverlay(geojsonLayer, lyrname);
+			lyrctl.addOverlay(geojsonLayer, prettynames[lyrname]);
 		};
 		
 		function AddLowresLayers() {
+			RemoveLowresLayers()
 			// Add low res raster redaction layers to the map
-			var ll = ['allways'];
-			var desc = ['touched'];
+			var ll = ['notremapped','remappinginarea','likelyremapped'];
+			var desc = ['non-remapped ways','non-remapped ways, recent mapping in area','likely remapped ways'];
 			for (l in ll) {
 				var lname = 'schaaltreinen:redaction_' + ll[l];
 				var Url = 'http://lima.schaaltreinen.nl:8080/geoserver/gwc/service/wms'
@@ -234,11 +258,11 @@
 					format: 'image/png'
 				});
 				rasterLayers[l].addTo(map);
-				lyrctl.addOverlay(rasterLayers[l], 'Low res raster overview - ' + desc[l] + ' ways');
+				lyrctl.addOverlay(rasterLayers[l], 'raster - ' + desc[l]);
 			}
 		};
 		
-		function RemoveLowresLayer() {
+		function RemoveLowresLayers() {
 			for (l in rasterLayers) {
 				rl = rasterLayers[l];
 				map.removeLayer(rl);
